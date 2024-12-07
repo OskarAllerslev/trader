@@ -238,3 +238,9 @@ with tabs[1]:
 
     if st.button("Refresh Data"):
         st.experimental_rerun()
+
+
+# ---------------------- BETA NEUTRAL TRADER ----------------------
+with tabs[2]:
+    st.markdown("## Beta Neutral trader")
+    st.write("This is a placeholder for your beta neutral strategy. You can add relevant metrics, plots, and logic here.")
