@@ -7,3 +7,4 @@ numpy
 requests
 PyYAML
 statsmodels
+asyncpg
