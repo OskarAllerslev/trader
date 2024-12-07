@@ -137,3 +137,46 @@ def fetch_historical_data(symbol, start_dt, end_dt):
 st.markdown("<h1 style='text-align: center;'>Trading Dashboard</h1>", unsafe_allow_html=True)
 tabs = st.tabs(["Account Overview", "Regime Switching trader", "Beta Neutral trader"])
 
+# ---------------------- ACCOUNT OVERVIEW ----------------------
+with tabs[0]:
+    st.markdown("## Account Overview")
+    balance, buying_power, equity, last_equity, portfolio_value = fetch_account_info()
+
+    st.write("General account information and portfolio overview:")
+    colA, colB, colC, colD, colE = st.columns(5)
+    colA.metric(label="**Account Balance (USD)**", value=f"${balance:,.2f}")
+    colB.metric(label="**Buying Power (USD)**", value=f"${buying_power:,.2f}")
+    colC.metric(label="**Equity (USD)**", value=f"${equity:,.2f}")
+    delta_equity = equity - last_equity
+    colD.metric(label="**Last Equity (USD)**", value=f"${last_equity:,.2f}", delta=f"${delta_equity:,.2f}")
+    colE.metric(label="**Portfolio Value (USD)**", value=f"${portfolio_value:,.2f}")
+
+    st.markdown("---")
+    st.markdown("**Historical Account Performance**")
+
+    ph_df = fetch_portfolio_history_from_api()
+    if not ph_df.empty:
+        # Calculate cumulative profit_loss and cumulative profit_loss_pct
+        ph_df['cumulative_profit_loss'] = ph_df['profit_loss'].cumsum()
+        ph_df['cumulative_profit_loss_pct'] = ph_df['profit_loss_pct'].cumsum()
+
+        # Create DataFrame for profit_loss and cumulative_profit_loss
+        pl_data = ph_df[['profit_loss', 'cumulative_profit_loss']]
+
+        # Use columns to display three charts side-by-side
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.markdown("**Equity (USD)**")
+            st.line_chart(ph_df['equity'], use_container_width=True)
+
+        with col2:
+            st.markdown("**Profit/Loss (USD)**")
+            st.line_chart(pl_data, use_container_width=True)
+
+        with col3:
+            st.markdown("**Cumulative Profit/Loss Percentage**")
+            st.line_chart(ph_df['cumulative_profit_loss_pct'], use_container_width=True)
+
+    else:
+        st.write("No historical equity data available.")
