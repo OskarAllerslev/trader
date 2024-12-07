@@ -1,3 +1,5 @@
+print("init")
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -9,6 +11,8 @@ import requests
 from alpaca.data import StockHistoricalDataClient
 from alpaca.data.requests import StockLatestTradeRequest
 from alpaca.data.timeframe import TimeFrame
+
+print("imports done")
 
 # Alpaca API credentials (use your actual keys)
 API_KEY = 'PKTRHQWHETKU0MRD2119'
