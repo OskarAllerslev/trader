@@ -6,4 +6,6 @@ run tradingscripts on local machine / server (does trading) -> database (data ne
 password for databse: Porsevej7!
 
 Database URL:
-user=postgres.dceaclimutffnytrqtfb password=[YOUR-PASSWORD] host=aws-0-eu-central-1.pooler.supabase.com port=6543 dbname=postgres
+
+DATABASE_URL = "postgres://postgres.dceaclimutffnytrqtfb:Porsevej7!@aws-0-eu-central-1.pooler.supabase.com:6543/postgres"
+
