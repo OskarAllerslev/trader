@@ -72,8 +72,8 @@ async def insert_probability(timestamp, last_p0_val):
         database=DB_NAME
     )
     await conn.execute(
-        "INSERT INTO msmdata (timestamp, last_p0) VALUES ($1, $2)",
-        timestamp, last_p0_val
+        "INSERT INTO msmdata (timestamp, last_p0, ENTRY_THRESHOLD) VALUES ($1, $2, $3)",
+        timestamp, last_p0_val, ENTRY_THRESHOLD
     )
     await conn.close()
 
