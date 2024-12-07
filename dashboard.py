@@ -25,3 +25,20 @@ ENTRY_THRESHOLD = 0.9  # The threshold used in the regime switching strategy
 
 # Page config
 st.set_page_config(page_title="Trading Dashboard", layout="wide")
+
+
+# Style adjustments (simple)
+st.markdown("""
+<style>
+    .main { 
+        background-color: #f8f9fa; 
+    }
+    .stMarkdown h1, h2, h3, h4 {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        color: #222;
+    }
+    .metric-label {
+        font-weight: bold;
+    }
+</style>
+""", unsafe_allow_html=True)
