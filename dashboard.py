@@ -180,3 +180,61 @@ with tabs[0]:
 
     else:
         st.write("No historical equity data available.")
+
+
+
+
+# ---------------------- REGIME SWITCHING TRADER ----------------------
+with tabs[1]:
+    st.markdown("## Regime Switching trader")
+    st.write(f"**Entry/Exit Threshold:** {ENTRY_THRESHOLD:.2f}")
+    st.write("This threshold indicates the probability above which the strategy enters the market, and below which it exits.")
+
+    timestamp_str, last_p0_val = fetch_last_p0_data()
+    if last_p0_val is not None:
+        st.markdown("**Markov Model Probability P(X(t+1))**")
+        col1, col2 = st.columns(2)
+        col1.metric(label="P(X(t+1)) of Positive Regime", value=f"{last_p0_val:.2%}")
+        col2.markdown(f"**Data Timestamp:** {timestamp_str}")
+    else:
+        st.write("No probability data available yet. Ensure msv10.py is running and updating `last_p0_data.csv`.")
+
+    st.markdown("---")
+    st.markdown("**Current Position**")
+    position_df = fetch_current_positions()
+    if position_df.empty:
+        st.write("No current positions for this strategy.")
+    else:
+        st.dataframe(position_df.style.format({
+            "Quantity": "{:,.0f}",
+            "Entry Price": "{:,.2f}",
+            "Current Price": "{:,.2f}",
+            "Unrealized PnL": "{:,.2f}"
+        }), use_container_width=True)
+
+    st.markdown("---")
+    st.markdown("**Historical Data & Log Returns**")
+
+    today = date.today()
+    default_start = today.replace(year=today.year - 1)  # default to 1 year ago
+    chosen_start = st.date_input("Start Date:", default_start)
+    chosen_end = st.date_input("End Date:", today)
+
+    if chosen_start > chosen_end:
+        st.error("Start date must be before the end date.")
+    else:
+        historical_data = fetch_historical_data(symbol_spy, chosen_start.strftime("%Y-%m-%d"), chosen_end.strftime("%Y-%m-%d"))
+
+        if not historical_data.empty and 'Adj Close' in historical_data.columns:
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown("**Historical Prices (Adj Close)**")
+                st.line_chart(historical_data['Adj Close'], use_container_width=True)
+            with col2:
+                st.markdown("**Log Returns**")
+                st.line_chart(historical_data['Log Return'], use_container_width=True)
+        else:
+            st.write("No historical data available for the given date range.")
+
+    if st.button("Refresh Data"):
+        st.experimental_rerun()
