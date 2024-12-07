@@ -84,8 +84,8 @@ def fetch_portfolio_history_from_api():
     return df
 
 def fetch_last_p0_data():
-    if os.path.exists("last_p0_data.csv"):
-        df = pd.read_csv("last_p0_data.csv")
+    if os.path.exists("data/last_p0_data.csv"):
+        df = pd.read_csv("data/last_p0_data.csv")
         if not df.empty:
             row = df.iloc[-1]
             timestamp_str = row["timestamp"]
