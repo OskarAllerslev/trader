@@ -2,7 +2,21 @@ alpaca:
   api_key: "PKTRHQWHETKU0MRD2119"
   api_secret: "OYbFiGWVC9KEQw5KalyalLVl8b4xvMxZghhpvXpd"
 
+database:
+  user: "postgres.dceaclimutffnytrqtfb"
+  password: "Porsevej7!"
+  host: "aws-0-eu-central-1.pooler.supabase.com"
+  port: 5432
+  name: "postgres"
+
 strategies:
   regime_switching:
+    entry_threshold: 0.9
     allocation_percentage: 0.95
-    entry_threshold: 0.90
+
+  beta_neutral:
+    allocation_percentage: 0.02
+
+symbols:
+  spy: "SPY"
+  trade: "SPXL"
