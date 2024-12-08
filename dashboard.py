@@ -114,8 +114,8 @@ async def fetch_historical_p0_data_async():
     conn = await asyncpg.connect(DATABASE_URL)
     # Fetch daily last p0 of each day
     rows = await conn.fetch("""
-        SELECT date(timestamp) as day,
-               (array_agg(last_p0 ORDER BY timestamp DESC))[1] AS daily_last_p0
+        SELECT date(timestamp) AS day,
+            CAST((array_agg(last_p0 ORDER BY timestamp DESC))[1] AS FLOAT) AS daily_last_p0
         FROM msmdata
         GROUP BY date(timestamp)
         ORDER BY day;
