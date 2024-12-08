@@ -13,6 +13,7 @@ import pytz
 from asyncio import Lock
 import os
 import asyncpg
+import yaml
 
 # Import Alpaca Market Data API modules
 from alpaca.data import StockHistoricalDataClient
@@ -26,9 +27,15 @@ logging.basicConfig(
     handlers=[logging.StreamHandler()]
 )
 
+config_path = r"C:\Users\Oskar\OneDrive\strategytrader\trader\config\config.yaml.txt"
+
+with open(config_path, "r") as file:
+    config = yaml.safe_load(file)
+
+
 # Alpaca API credentials
-API_KEY = 'PKTRHQWHETKU0MRD2119'
-API_SECRET = 'OYbFiGWVC9KEQw5KalyalLVl8b4xvMxZghhpvXpd'
+API_KEY = config['alpaca']['api_key']
+API_SECRET = config['alpaca']['api_secret']
 
 # Database connection parameters
 DB_USER = 'postgres.dceaclimutffnytrqtfb'
@@ -49,8 +56,8 @@ fitted_model = None
 positive_regime = 0
 last_p0 = None
 last_p0_timestamp = None
-ENTRY_THRESHOLD = 0.90
-TRADE_PERCENTAGE = 0.95
+ENTRY_THRESHOLD = config['strategies']['regime_switching']['entry_threshold']
+TRADE_PERCENTAGE = config['strategies']['regime_switching']['allocation_percentage']
 eastern = pytz.timezone('US/Eastern')
 current_position = None
 
