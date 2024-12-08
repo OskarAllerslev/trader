@@ -112,10 +112,9 @@ def fetch_entry_threshold():
 
 async def fetch_historical_p0_data_async():
     conn = await asyncpg.connect(DATABASE_URL)
-    # Fetch daily last p0 of each day
     rows = await conn.fetch("""
         SELECT date(timestamp) AS day,
-            CAST((array_agg(last_p0 ORDER BY timestamp DESC))[1] AS FLOAT) AS daily_last_p0
+               CAST((array_agg(last_p0 ORDER BY timestamp DESC))[1] AS FLOAT) AS daily_last_p0
         FROM msmdata
         GROUP BY date(timestamp)
         ORDER BY day;
@@ -123,14 +122,35 @@ async def fetch_historical_p0_data_async():
     await conn.close()
 
     if rows:
-        df = pd.DataFrame(rows, columns=["day","daily_last_p0"])
+        df = pd.DataFrame(rows, columns=["day", "daily_last_p0"])
         df.set_index("day", inplace=True)
         return df
     else:
-        return pd.DataFrame(columns=["day","daily_last_p0"])
+        return pd.DataFrame(columns=["day", "daily_last_p0"])
 
+@st.cache
 def fetch_historical_p0_data():
-    return asyncio.run(fetch_historical_p0_data_async())
+    df = asyncio.run(fetch_historical_p0_data_async())
+    if df.empty:
+        st.write("Fetched historical P0 data is empty in the cloud.")
+    else:
+        st.write("Sample fetched historical P0 data:", df.head())
+    return df
+
+# Fetch and plot data
+historical_p0_df = fetch_historical_p0_data()
+
+if historical_p0_df.empty:
+    st.warning("No historical P0 data available. Ensure the database is populated.")
+else:
+    # Ensure proper types
+    historical_p0_df.index = pd.to_datetime(historical_p0_df.index, errors='coerce')
+    historical_p0_df["daily_last_p0"] = pd.to_numeric(historical_p0_df["daily_last_p0"], errors='coerce')
+    historical_p0_df.dropna(subset=["daily_last_p0"], inplace=True)
+
+    st.line_chart(historical_p0_df["daily_last_p0"], use_container_width=True)
+
+
 
 from alpaca.data.requests import StockLatestTradeRequest
 
