@@ -10,6 +10,7 @@ from alpaca.data.requests import StockLatestTradeRequest
 from alpaca.data.timeframe import TimeFrame
 import asyncio 
 import asyncpg
+import yaml
 
 # Alpaca API credentials (use your actual keys)
 API_KEY = 'PKTRHQWHETKU0MRD2119'
@@ -24,6 +25,12 @@ data_client = StockHistoricalDataClient(API_KEY, API_SECRET)
 
 symbol_spy = "SPY"
 symbol_trade = "SPXL"
+
+config_path = r"C:\Users\Oskar\OneDrive\strategytrader\trader\config\config.yaml.txt"
+
+with open(config_path, "r") as file:
+    config = yaml.safe_load(file)
+
 
 # Page config
 st.set_page_config(page_title="Trading Dashboard", layout="wide")
@@ -128,7 +135,7 @@ async def fetch_historical_p0_data_async():
     else:
         return pd.DataFrame(columns=["day", "daily_last_p0"])
 
-@st.cache
+
 def fetch_historical_p0_data():
     df = asyncio.run(fetch_historical_p0_data_async())
     if df.empty:
@@ -137,18 +144,6 @@ def fetch_historical_p0_data():
         st.write("Sample fetched historical P0 data:", df.head())
     return df
 
-# Fetch and plot data
-historical_p0_df = fetch_historical_p0_data()
-
-if historical_p0_df.empty:
-    st.warning("No historical P0 data available. Ensure the database is populated.")
-else:
-    # Ensure proper types
-    historical_p0_df.index = pd.to_datetime(historical_p0_df.index, errors='coerce')
-    historical_p0_df["daily_last_p0"] = pd.to_numeric(historical_p0_df["daily_last_p0"], errors='coerce')
-    historical_p0_df.dropna(subset=["daily_last_p0"], inplace=True)
-
-    st.line_chart(historical_p0_df["daily_last_p0"], use_container_width=True)
 
 
 
@@ -241,32 +236,34 @@ with tabs[1]:
     # Fetch threshold and latest p0 from DB
     entry_threshold = fetch_entry_threshold()
     timestamp_str, last_p0_val = fetch_last_p0_data()
+    balance, buying_power, equity, last_equity, portfolio_value = fetch_account_info()
 
-    # Display the entry threshold
-    if entry_threshold is not None:
-        st.write(f"**Entry/Exit Threshold:** {entry_threshold:.2f}")
-        st.write("This threshold indicates the probability above which the strategy enters the market, and below which it exits.")
-    else:
-        st.write("No threshold available. Ensure msv11.py is running and has set the threshold.")
+    # Define the allocation percentage (from config or predefined value)
+    allocation_percentage = config['strategies']['regime_switching']['allocation_percentage']
+    allocated_capital = equity * allocation_percentage
 
-    # Display latest p0
-    if last_p0_val is not None:
-        st.markdown("**Markov Model Probability P(X(t+1))**")
-        col1, col2 = st.columns(2)
+    # Add P(X(t+1)), Entry Threshold, and Allocated Capital side by side
+    if last_p0_val is not None and entry_threshold is not None:
+        col1, col2, col3, col4 = st.columns(4)
         col1.metric(label="P(X(t+1)) of Positive Regime", value=f"{last_p0_val:.2%}")
-        col2.markdown(f"**Data Timestamp:** {timestamp_str}")
+        col2.metric(label="Entry/Exit Threshold", value=f"{entry_threshold:.2f}")
+        col3.metric(label="Allocated Percentage", value=f"{allocation_percentage:,.2f}")
+        col4.metric(label="Allocated Capital", value=f"${allocated_capital:,.2f}")
     else:
-        st.write("No probability data available yet. Ensure msv11.py is running and updating the database.")
+        st.write("No data available for P(X(t+1)) or entry threshold. Ensure the required processes are running.")
 
-    # Fetch historical daily p0 and plot it
+
+    # Move the Historical P0 Plot here
     historical_p0_df = fetch_historical_p0_data()
     if not historical_p0_df.empty:
+        st.markdown("<br>", unsafe_allow_html=True)  # Add vertical spacing
         st.markdown("### Historical P0 (Daily)")
         st.line_chart(historical_p0_df['daily_last_p0'], use_container_width=True)
     else:
-        st.write("No historical P0 data available.")
+        st.write("No historical P0 data available. Ensure the database is populated.")
 
-    st.markdown("---")
+    st.markdown("---")  # Separator
+
     st.markdown("**Current Position**")
     position_df = fetch_current_positions()
     if position_df.empty:
@@ -279,7 +276,8 @@ with tabs[1]:
             "Unrealized PnL": "{:,.2f}"
         }), use_container_width=True)
 
-    st.markdown("---")
+    st.markdown("---")  # Separator
+
     st.markdown("**Historical Data & Log Returns**")
 
     today = date.today()
@@ -305,6 +303,7 @@ with tabs[1]:
 
     if st.button("Refresh Data"):
         st.experimental_rerun()
+
 
 # ---------------------- BETA NEUTRAL TRADER ----------------------
 with tabs[2]:
