@@ -16,7 +16,11 @@ strategies:
 
   beta_neutral:
     allocation_percentage: 0.02
+    min_return: 0.0002
 
 symbols:
   spy: "SPY"
   trade: "SPXL"
+
+data:
+  sp500_csv: "data/SP500.csv"

@@ -1,7 +1,0 @@
-alpaca:
-  api_key: "PKTRHQWHETKU0MRD2119"
-  api_secret: "OYbFiGWVC9KEQw5KalyalLVl8b4xvMxZghhpvXpd"
-
-strategies:
-  regime_switching:
-    allocation_percentage: 0.95
