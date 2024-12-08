@@ -26,7 +26,7 @@ data_client = StockHistoricalDataClient(API_KEY, API_SECRET)
 symbol_spy = "SPY"
 symbol_trade = "SPXL"
 
-config_path = r"C:\Users\Oskar\OneDrive\strategytrader\trader\config\config.yaml.txt"
+config_path = r"\config\config.yaml.txt"
 
 with open(config_path, "r") as file:
     config = yaml.safe_load(file)
