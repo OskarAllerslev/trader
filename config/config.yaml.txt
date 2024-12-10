@@ -14,9 +14,9 @@ strategies:
     entry_threshold: 0.9
     allocation_percentage: 0.95
 
-  beta_neutral:
+  tail_reaper:
     allocation_percentage: 0.02
-    min_return: 0.0002
+    
 
 symbols:
   spy: "SPY"
