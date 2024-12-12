@@ -354,7 +354,7 @@ with tabs[2]:
     if fitted_params is None:
         st.error("Failed to fit t-distribution to log returns.")
     else:
-        st.markdown(f"Fitted Parameters: {fitted_params}")
+        
 
         # Compute the quantile value for shading
         quantile_value = t.ppf(quantile_threshold, *fitted_params)
