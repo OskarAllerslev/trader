@@ -11,6 +11,24 @@ from alpaca.data.timeframe import TimeFrame
 import asyncio 
 import asyncpg
 import yaml
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy.stats import t
+import sys
+import os
+import statsmodels.stats 
+
+
+
+
+# Dynamically add the 'scripts' folder to the Python path
+scripts_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "scripts"))
+if scripts_path not in sys.path:
+    sys.path.append(scripts_path)
+
+# Now import the function from tailreaper.py
+from scripts.tailreaper import fit_t_distribution
+
 
 # Alpaca API credentials (use your actual keys)
 API_KEY = 'PKTRHQWHETKU0MRD2119'
@@ -189,7 +207,7 @@ def fetch_historical_data(symbol, start_dt, end_dt):
     return data
 
 st.markdown("<h1 style='text-align: center;'>Trading Dashboard</h1>", unsafe_allow_html=True)
-tabs = st.tabs(["Account Overview", "Regime Switching trader", "Beta Neutral trader"])
+tabs = st.tabs(["Account Overview", "Regime Switching trader", " Tail Reaper"])
 
 # ---------------------- ACCOUNT OVERVIEW ----------------------
 with tabs[0]:
@@ -308,5 +326,73 @@ with tabs[1]:
 
 # ---------------------- BETA NEUTRAL TRADER ----------------------
 with tabs[2]:
-    st.markdown("## Beta Neutral trader")
-    st.write("This is a placeholder for your beta neutral strategy. You can add relevant metrics, plots, and logic here.")
+
+    # Fetch historical data from 1994-01-01 to today
+    start_date = "1994-01-01"
+    end_date = datetime.today().strftime('%Y-%m-%d')
+    historical_data = fetch_historical_data(symbol_spy, start_date, end_date)
+    log_returns = historical_data['Log Return']
+
+
+    st.markdown("## Tail Reaper")
+    allocation_percentage_tr = config['strategies']['tail_reaper']['allocation_percentage']
+    quantile_threshold = config['strategies']['tail_reaper']['quantile']
+    price_drop_threshold = config['strategies']['tail_reaper']['price_drop_threshold']
+    profit_target = config['strategies']['tail_reaper']['profit_target']
+    latest_log_return = log_returns.iloc[-2]
+
+    col1, col2, col3, col4, col5 = st.columns(5)
+    col1.metric(label="Allocation Percentage", value=f"{allocation_percentage_tr:.2%}")
+    col2.metric(label="Quantile Threshold", value=f"{quantile_threshold:.2}")
+    col3.metric(label="Price Drop Threshold", value=f"{price_drop_threshold:.2%}")
+    col4.metric(label="Profit Target", value=f"{profit_target:.2}")
+    col5.metric(label ="Last log-return", value = f"{latest_log_return}")
+
+
+    # Fit t-distribution to log returns
+    fitted_params = fit_t_distribution(log_returns)
+    if fitted_params is None:
+        st.error("Failed to fit t-distribution to log returns.")
+    else:
+        st.markdown(f"Fitted Parameters: {fitted_params}")
+
+        # Compute the quantile value for shading
+        quantile_value = t.ppf(quantile_threshold, *fitted_params)
+
+        # Create the plot with adjusted layout
+        fig = plt.figure(figsize=(12, 6))
+        
+        # Main time series plot
+        ax1 = fig.add_subplot(1, 2, 2)
+        ax1.plot(historical_data.index, log_returns, label="Log Returns", color="blue", linewidth=0.5)
+        ax1.set_xlabel("Time")
+        ax1.set_ylabel("Log Returns", color="blue")
+        ax1.tick_params(axis="y", labelcolor="blue")
+        ax1.set_title("Log Returns Over Time")
+        ax1.grid(alpha=0.3)
+        ax1.legend(loc="upper right")
+
+        # Fitted t-distribution PDF plot
+        ax2 = fig.add_subplot(1, 2, 1)
+        x = np.linspace(log_returns.min(), log_returns.max(), 1000)
+        pdf = t.pdf(x, *fitted_params)
+
+        # Plot the PDF
+        ax2.plot(pdf, x, color="red", label="Fitted t-Distribution")
+
+        # Highlight the quantile threshold region
+        ax2.fill_betweenx(x, 0, pdf, where=(x <= quantile_value), color="green", alpha=0.3, label=f"{quantile_threshold:.2%} Quantile")
+
+        # Add labels and grid
+        ax2.set_xlabel("Probability Density", color="red")
+        ax2.set_ylabel("Log Returns")
+        ax2.tick_params(axis="x", labelcolor="red")
+        ax2.grid(alpha=0.3)
+        ax2.set_title("Fitted t-Distribution with Highlighted Quantile")
+        ax2.legend(loc="upper right")
+
+        # Adjust layout for better appearance
+        plt.tight_layout()
+
+        # Display the plot in Streamlit
+        st.pyplot(fig)

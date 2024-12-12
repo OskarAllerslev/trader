@@ -37,11 +37,11 @@ entry_threshold = None  # Entry threshold at 0.01 quantile
 symbol_spy = "SPY"
 
 # Strategy Parameters
-quantile = 0.5  # Entry threshold quantile
-price_drop_threshold = 0.25  # Price drop threshold for entry
+quantile = config['strategies']['tail_reaper']['quantile']  # Entry threshold quantile
+price_drop_threshold = config['strategies']['tail_reaper']['price_drop_threshold']  # Price drop threshold for entry
 lookback_days = 600  # Days to look back for recent high
-profit_target = 0.3  # Profit target for exiting trades
-cash_allocation = config['strategies']['tail_reaper']['allocation_percentage']  # Use 90% of available cash
+profit_target = config['strategies']['tail_reaper']['profit_target']  # Profit target for exiting trades
+cash_allocation = config['strategies']['tail_reaper']['allocation_percentage']  
 
 current_position = None
 trade_entry_price = None
@@ -56,7 +56,7 @@ async def initialize_historical_data():
 
     logging.info("Fetching historical SPY data for initialization.")
     try:
-        start_date = '1990-01-01'
+        start_date = '1994-01-01'
         end_date = datetime.now(pytz.UTC).strftime('%Y-%m-%d')
 
         # Fetch historical data
@@ -93,11 +93,14 @@ def fit_t_distribution(log_returns):
 
     try:
         logging.info("Fitting t-distribution to log returns.")
-        params = stats.t.fit(log_returns)
-        entry_threshold = stats.t.ppf(quantile, *params)
+        params = stats.t.fit(log_returns)  # Fit the t-distribution
+        quantile = 0.95  # Set the desired quantile (adjust as needed)
+        entry_threshold = stats.t.ppf(quantile, *params)  # Calculate the entry threshold
         logging.info(f"Entry threshold at {quantile * 100:.2f}% quantile: {entry_threshold:.4f}")
+        return params  # Return the fitted parameters
     except Exception as e:
         logging.error(f"Error fitting t-distribution: {e}")
+        return None
 
 
 async def fetch_live_price():
@@ -177,8 +180,8 @@ async def trading_logic():
             current_log_return = np.log(current_price / previous_price)
 
             # Calculate recent high (optional: adjust dynamically if needed)
-            #recent_high = max(log_returns_spy[-lookback_days:])
-            recent_high = 8000
+            recent_high = max(log_returns_spy[-lookback_days:])
+            #recent_high = 8000
             # Calculate percentage price drop from recent high
             price_drop = 1 - (current_price / recent_high)
 

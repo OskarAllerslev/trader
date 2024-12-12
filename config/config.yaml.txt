@@ -16,6 +16,9 @@ strategies:
 
   tail_reaper:
     allocation_percentage: 0.02
+    quantile: 0.1
+    price_drop_threshold: 0.25
+    profit_target: 0.3
     
 
 symbols:
