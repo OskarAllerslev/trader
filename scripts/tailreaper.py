@@ -16,13 +16,17 @@ import yfinance as yf
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest, LimitOrderRequest, TakeProfitRequest, StopLossRequest
 from alpaca.trading.enums import OrderSide, TimeInForce, OrderClass
+import os 
 # Configure logging
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # Load configuration
 #config_path = r"C:\Users\Oskar\OneDrive\strategytrader\trader\config\config.yaml.txt"
 
-config_path = r"config\config.yaml.txt"
+# Determine the directory of the current script and use a relative path
+base_dir = os.path.dirname(os.path.abspath(__file__))
+config_path = os.path.join(base_dir, "../config/config.yaml.txt")
 
 with open(config_path, "r") as file:
     config = yaml.safe_load(file)
