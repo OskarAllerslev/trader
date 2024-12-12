@@ -20,7 +20,9 @@ from alpaca.trading.enums import OrderSide, TimeInForce, OrderClass
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # Load configuration
-config_path = r"C:\Users\Oskar\OneDrive\strategytrader\trader\config\config.yaml.txt"
+#config_path = r"C:\Users\Oskar\OneDrive\strategytrader\trader\config\config.yaml.txt"
+
+config_path = r"config\config.yaml.txt"
 
 with open(config_path, "r") as file:
     config = yaml.safe_load(file)
