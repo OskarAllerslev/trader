@@ -8,3 +8,4 @@ requests
 PyYAML
 statsmodels
 asyncpg
+matplotlib
