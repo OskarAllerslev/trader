@@ -1,3 +1,25 @@
+
+To do:
+
+ tilføj strategi id så vi kan holde styr på hvilken strategi der har placeret hvilke 
+    tilføj closes realized & unlrealized profit fra hver strategi
+implementer recession clapper
+forbedre interface 
+    sådan man kan se positionens entry price i historical prices 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 Workflow:
 
 run tradingscripts on local machine / server (does trading) -> database (data needed for dashboard) -> streamlit app

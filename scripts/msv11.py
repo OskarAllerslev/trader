@@ -248,15 +248,20 @@ async def enter_position():
                 current_position = "long"
                 return
 
+    # Create a unique client_order_id
+    client_order_id = f"markovswitcher_entry_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+
     order_data = MarketOrderRequest(
         symbol=symbol_trade,
         qty=max_shares,
         side=OrderSide.BUY,
-        time_in_force=TimeInForce.DAY
+        time_in_force=TimeInForce.DAY,
+        client_order_id=client_order_id
     )
     trading_client.submit_order(order_data=order_data)
-    logging.info(f"Bought {max_shares} shares of {symbol_trade}.")
+    logging.info(f"Bought {max_shares} shares of {symbol_trade}. Order ID: {client_order_id}.")
     current_position = "long"
+
 
 async def exit_position():
     global current_position
@@ -270,14 +275,18 @@ async def exit_position():
         if position.symbol == symbol_trade:
             current_quantity = int(float(position.qty))
             if current_quantity > 0:
+                # Create a unique client_order_id
+                client_order_id = f"markovswitcher_exit_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+
                 order_data = MarketOrderRequest(
                     symbol=symbol_trade,
                     qty=current_quantity,
                     side=OrderSide.SELL,
-                    time_in_force=TimeInForce.DAY
+                    time_in_force=TimeInForce.DAY,
+                    client_order_id=client_order_id
                 )
                 trading_client.submit_order(order_data=order_data)
-                logging.info(f"Sold {current_quantity} shares of {symbol_trade}.")
+                logging.info(f"Sold {current_quantity} shares of {symbol_trade}. Order ID: {client_order_id}.")
                 current_position = None
             return
     logging.info("No position to close.")
@@ -360,9 +369,11 @@ async def refit_markov_model():
             for date, prob in zip(last_five_dates, last_five_probs):
                 logging.info(f"Refit Prob {date}: {prob:.6f}")
 
-            last_p0 = smoothed_probs[-2]
-            last_p0_timestamp = last_five_dates[-2]
-            logging.info(f"Updated last_p0: {last_p0:.6f} at {last_p0_timestamp}")
+            async with update_lock:
+                last_p0 = smoothed_probs[-2]
+                last_p0_timestamp = data_combined.index[-2]
+                logging.info(f"Updated last_p0: {last_p0:.6f} at {last_p0_timestamp}")
+
 
         except Exception as e:
             logging.error(f"Error refitting model: {e}")
@@ -379,6 +390,7 @@ async def trading_logic():
             async with update_lock:
                 current_last_p0 = last_p0
                 current_last_p0_timestamp = last_p0_timestamp
+
 
             if current_last_p0 is not None and current_last_p0_timestamp is not None:
                 ts_utc = current_last_p0_timestamp.astimezone(timezone.utc)
