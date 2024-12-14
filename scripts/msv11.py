@@ -14,6 +14,8 @@ from asyncio import Lock
 import os
 import asyncpg
 import yaml
+from pandas.tseries.offsets import BDay
+
 
 # Import Alpaca Market Data API modules
 from alpaca.data import StockHistoricalDataClient
@@ -70,19 +72,26 @@ def is_market_open():
         return False
 
 async def insert_probability(timestamp, last_p0_val):
-    # Connect using parameters instead of a DSN
-    conn = await asyncpg.connect(
-        user=DB_USER,
-        password=DB_PASSWORD,
-        host=DB_HOST,
-        port=DB_PORT,
-        database=DB_NAME
-    )
-    await conn.execute(
-        "INSERT INTO msmdata (timestamp, last_p0, ENTRY_THRESHOLD) VALUES ($1, $2, $3)",
-        timestamp, last_p0_val, ENTRY_THRESHOLD
-    )
-    await conn.close()
+    logging.info(f"Inserting P0: {last_p0_val} at {timestamp}")
+    
+    # Construct connection string
+    conn_str = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    
+    try:
+        # Connect using the connection string
+        conn = await asyncpg.connect(conn_str)
+        await conn.execute(
+            "INSERT INTO msmdata (timestamp, last_p0, ENTRY_THRESHOLD) VALUES ($1, $2, $3)",
+            timestamp, last_p0_val, ENTRY_THRESHOLD
+        )
+        logging.info("Insert successful.")
+    except Exception as e:
+        logging.error(f"Database insert failed: {e}")
+    finally:
+        if conn:
+            await conn.close()
+
+
 
 async def initialize_historical_data():
     global fitted_model, log_returns_spy, positive_regime, last_p0, last_p0_timestamp
@@ -150,7 +159,7 @@ async def initialize_historical_data():
         data_combined = pd.concat([data_yf, data_alpaca])
         data_combined.sort_index(inplace=True)
         data_combined = data_combined[~data_combined.index.duplicated(keep='first')]
-
+        
         if data_combined['Adj Close'].isnull().any():
             null_rows = data_combined[data_combined['Adj Close'].isnull()]
             logging.error(f"Null values in 'Adj Close':\n{null_rows.index}")
@@ -169,7 +178,7 @@ async def initialize_historical_data():
         if len(log_returns_spy) == 0:
             logging.error("Log returns array is empty.")
             return
-
+        
         fitted_model = fit_markov_model(log_returns_spy)
         positive_regime = 0
         logging.info(f"Positive regime: {positive_regime}")
@@ -180,8 +189,13 @@ async def initialize_historical_data():
         for date, prob in zip(last_five_dates, last_five_probs):
             logging.info(f"Smoothed probability {date}: {prob:.6f}")
 
-        last_p0 = smoothed_probs[-2]
-        last_p0_timestamp = last_five_dates[-2]
+        last_p0 = smoothed_probs[-1]
+                
+        if data_combined.index[-1].date() != datetime.now(eastern).date():
+            last_p0_timestamp = data_combined.index[-1]
+        else: 
+            last_p0_timestamp = data_combined.index[-2]
+            
         logging.info(f"Initial P0: {last_p0:.6f} at {last_p0_timestamp}")
 
     except Exception as e:
@@ -292,91 +306,72 @@ async def exit_position():
     logging.info("No position to close.")
     current_position = None
 
+from pandas.tseries.offsets import BDay
+
 async def refit_markov_model():
     global fitted_model, log_returns_spy, positive_regime, last_p0, last_p0_timestamp
+
     while True:
         now = datetime.now(eastern)
         next_hour = (now + timedelta(hours=1)).replace(minute=5, second=0, microsecond=0)
         sleep_duration = (next_hour - now).total_seconds()
-        logging.info(f"Sleeping {sleep_duration/60:.2f} minutes before refit.")
+        logging.info(f"Sleeping {sleep_duration / 60:.2f} minutes before refit.")
         await asyncio.sleep(sleep_duration)
 
         try:
-            logging.info("Refitting model...")
-            start_date = '1990-01-01'
-            end_date = datetime.now(pytz.UTC).strftime('%Y-%m-%d')
-            data_yf = yf.download(symbol_spy, start=start_date, end=end_date, interval='1d')
-            data_yf.dropna(inplace=True)
-            if data_yf.index.tz is None:
-                data_yf.index = data_yf.index.tz_localize('UTC')
-            else:
-                data_yf.index = data_yf.index.tz_convert('UTC')
-
-            recent_start_date = datetime.now(pytz.UTC) - timedelta(days=5)
-            recent_end_date = datetime.now(pytz.UTC)
-            request_params = StockBarsRequest(
-                symbol_or_symbols=symbol_spy,
-                timeframe=TimeFrame.Day,
-                start=recent_start_date,
-                end=recent_end_date,
-                feed='iex'
-            )
-            bars = data_client.get_stock_bars(request_params).df
-            if bars.empty:
-                data_alpaca = pd.DataFrame()
-            else:
-                bars = bars.reset_index()
-                data_alpaca = bars[bars['symbol'] == symbol_spy].copy()
-                data_alpaca.set_index('timestamp', inplace=True)
-                data_alpaca.drop(columns=['symbol'], inplace=True)
-                if data_alpaca.index.tz is None:
-                    data_alpaca.index = data_alpaca.index.tz_localize('UTC')
-                else:
-                    data_alpaca.index = data_alpaca.index.tz_convert('UTC')
-                data_alpaca = data_alpaca[['close']]
-                data_alpaca.rename(columns={'close':'Adj Close'}, inplace=True)
-                data_alpaca.sort_index(inplace=True)
-                data_alpaca_dates = data_alpaca.index.date
-                data_yf_dates = data_yf.index.date
-                data_alpaca = data_alpaca[~np.isin(data_alpaca_dates, data_yf_dates)]
-
-            data_combined = pd.concat([data_yf, data_alpaca])
-            data_combined.sort_index(inplace=True)
-            data_combined = data_combined[~data_combined.index.duplicated(keep='first')]
-
-            if data_combined['Adj Close'].isnull().any():
-                continue
-
-            data_combined['Log Return'] = np.log(
-                data_combined['Adj Close'] / data_combined['Adj Close'].shift(1)
-            )
-            data_combined = data_combined.iloc[1:]
-            data_combined.index = data_combined.index.tz_convert(eastern)
-            data_combined.index = data_combined.index.normalize() + pd.Timedelta(hours=16)
-
-            if data_combined.empty:
-                continue
-
-            log_returns_spy = data_combined['Log Return'].values
-            if len(log_returns_spy) == 0:
-                continue
-
-            fitted_model = fit_markov_model(log_returns_spy)
-            positive_regime = 0
-            smoothed_probs = fitted_model.smoothed_marginal_probabilities[:, positive_regime]
-            last_five_dates = data_combined.index[-5:]
-            last_five_probs = smoothed_probs[-5:]
-            for date, prob in zip(last_five_dates, last_five_probs):
-                logging.info(f"Refit Prob {date}: {prob:.6f}")
-
             async with update_lock:
-                last_p0 = smoothed_probs[-2]
-                last_p0_timestamp = data_combined.index[-2]
-                logging.info(f"Updated last_p0: {last_p0:.6f} at {last_p0_timestamp}")
+                logging.info("Refitting model...")
 
+                # Ensure the end_date is the last completed business day
+                end_date = (datetime.now(pytz.UTC) - BDay(1)).strftime('%Y-%m-%d')
+                start_date = '1990-01-01'
+                logging.info(f"Fetching data from {start_date} to {end_date}")
+
+                # Fetch data
+                data_yf = yf.download(symbol_spy, start=start_date, end=end_date, interval='1d')
+                data_yf.dropna(inplace=True)
+
+                if data_yf.index.tz is None:
+                    data_yf.index = data_yf.index.tz_localize('UTC')
+                else:
+                    data_yf.index = data_yf.index.tz_convert('UTC')
+
+                # Process and combine data
+                data_combined = data_yf.copy()  # Assume no Alpaca data merging needed for simplicity
+                data_combined['Log Return'] = np.log(data_combined['Adj Close'] / data_combined['Adj Close'].shift(1))
+                data_combined = data_combined.iloc[1:]  # Drop the first row with NaN log return
+                data_combined.index = data_combined.index.tz_convert(eastern)
+                data_combined.index = data_combined.index.normalize() + pd.Timedelta(hours=16)
+
+                if data_combined.empty:
+                    logging.warning("No data available after processing.")
+                    continue
+
+                log_returns_spy = data_combined['Log Return'].values
+                if len(log_returns_spy) == 0:
+                    logging.warning("No log returns available after processing.")
+                    continue
+
+                # Fit the Markov model
+                fitted_model = fit_markov_model(log_returns_spy)
+                positive_regime = 0
+                smoothed_probs = fitted_model.smoothed_marginal_probabilities[:, positive_regime]
+
+                # Always use the last available probability (P0_{t-1}) and its timestamp
+                last_p0 = smoothed_probs[-1]
+                if data_combined.index[-1].date() != datetime.now(eastern).date():
+                    last_p0_timestamp = data_combined.index[-1]
+                else: 
+                    last_p0_timestamp = data_combined.index[-2]
+
+                logging.info(f"Updated last_p0: {last_p0:.6f} at {last_p0_timestamp}")
 
         except Exception as e:
             logging.error(f"Error refitting model: {e}")
+
+
+
+
 
 # Lock
 update_lock = Lock()
