@@ -229,10 +229,26 @@ def fetch_current_positions():
 
 def fetch_historical_data(symbol, start_dt, end_dt):
     """Fetch daily historical price data from Yahoo Finance and compute log-returns."""
+    print(f"Fetching data for {symbol} from {start_dt} to {end_dt}")
     data = yf.download(symbol, start=start_dt, end=end_dt, interval="1d")
-    if 'Adj Close' in data.columns:
-        data['Log Return'] = np.log(data['Adj Close'] / data['Adj Close'].shift(1))
-        data.dropna(inplace=True)
+
+    if data.empty:
+        print(f"No data fetched for {symbol}. Check the symbol or date range.")
+        return data
+
+    print("Fetched data sample:")
+    print(data.head())  # Print first few rows for debugging
+
+    # Ensure 'Adj Close' exists
+    if 'Adj Close' not in data.columns:
+        print("Missing 'Adj Close' in the data. Columns available:", data.columns)
+        return data
+
+    # Calculate log returns
+    data['Log Return'] = np.log(data['Adj Close'] / data['Adj Close'].shift(1))
+    data.dropna(inplace=True)
+    print("Processed data with 'Log Return':")
+    print(data.head())
     return data
 
 
