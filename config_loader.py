@@ -3,11 +3,13 @@ import yaml
 
 def get_config():
     """Load config.yaml dynamically based on the environment."""
-    # Check if running locally (Windows path)
-    if os.name == "nt":
+    # Debugging: Where is this script being executed from?
+    print(f"Current working directory: {os.getcwd()}")
+    
+    # Resolve the base path depending on the environment
+    if os.name == "nt":  # Windows (local development)
         config_path = r"C:\Users\oskar\OneDrive\strategytrader\trader\config\config.yaml"
-    else:
-        # Default to container or relative path
+    else:  # Default to the container path
         script_dir = os.path.dirname(os.path.abspath(__file__))
         config_path = os.path.normpath(os.path.join(script_dir, "config", "config.yaml"))
 
