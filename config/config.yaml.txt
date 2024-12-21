@@ -1,6 +1,6 @@
 alpaca:
-  api_key: "PK45S3KTIGHDWRW2S4WV"
-  api_secret: "6WN8XbYKOvcPui4HGCXu7r5tAGmLkQ8jcb4mQ0YO"
+  api_key: "PKCYJWOETNBK6VB6KQ0L"
+  api_secret: "T4rUiEMgAhnSvrNpAnjMoQL1m4A7yJlR61vUSXnT"
 
 database:
   user: "postgres.dceaclimutffnytrqtfb"
