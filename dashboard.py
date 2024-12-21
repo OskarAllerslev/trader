@@ -33,10 +33,8 @@ if scripts_path not in sys.path:
 
 from scripts.tailreaper import fit_t_distribution  # Ensure your tailreaper.py is in the 'scripts' folder
 from config_loader import get_config
-# -------------------------
-# Load config
-# -------------------------
 config = get_config()
+
 
 
 
@@ -144,18 +142,19 @@ def fetch_last_p0_data():
 
 async def fetch_entry_threshold_async():
     """Get the most recent entry threshold from your 'msmdata' table."""
-    conn = await asyncpg.connect(DATABASE_URL)
-    row = await conn.fetchrow("""
-        SELECT MAX(entry_threshold) AS max_entry_threshold
-        FROM msmdata
-        WHERE timestamp = (SELECT MAX(timestamp) FROM msmdata);
-    """)
-    await conn.close()
+    conn = await asyncpg.connect(DATABASE_URL, statement_cache_size=0)
+    try:
+        row = await conn.fetchrow("""
+            SELECT MAX(entry_threshold) AS max_entry_threshold
+            FROM msmdata
+            WHERE timestamp = (SELECT MAX(timestamp) FROM msmdata);
+        """)
+        print("Query result:", row)  # Debugging output
+        return float(row['max_entry_threshold']) if row else None
+    finally:
+        await conn.close()
 
-    if row and row['max_entry_threshold'] is not None:
-        return float(row['max_entry_threshold'])
-    else:
-        return None
+
 
 def fetch_entry_threshold():
     """Sync wrapper around the async function to fetch the entry threshold."""
