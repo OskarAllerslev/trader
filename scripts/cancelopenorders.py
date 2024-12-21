@@ -11,7 +11,7 @@ API_KEY = config['alpaca']['api_key']
 API_SECRET = config['alpaca']['api_secret']
 
 # Define URL and headers
-url = "https://paper-api.alpaca.markets/v2/orders"
+url = "https://paper-api.alpaca.markets/v2"
 headers = {
     "accept": "application/json",
     "APCA-API-KEY-ID": API_KEY,
