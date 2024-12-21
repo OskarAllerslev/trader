@@ -31,7 +31,7 @@ scripts_path = os.path.join(os.getcwd(), "scripts")
 if scripts_path not in sys.path:
     sys.path.append(scripts_path)
 
-from scripts.tailreaper import fit_t_distribution  # Ensure your tailreaper.py is in the 'scripts' folder
+from tailreaper import fit_t_distribution  # Ensure your tailreaper.py is in the 'scripts' folder
 
 # -------------------------
 # Load config
