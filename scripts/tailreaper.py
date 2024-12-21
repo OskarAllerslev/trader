@@ -18,6 +18,7 @@ from alpaca.trading.requests import MarketOrderRequest, LimitOrderRequest, TakeP
 from alpaca.trading.enums import OrderSide, TimeInForce, OrderClass
 import os 
 # Configure logging
+import sys
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
@@ -25,11 +26,21 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 #config_path = r"C:\Users\Oskar\OneDrive\strategytrader\trader\config\config.yaml.txt"
 
 # Determine the directory of the current script and use a relative path
-base_dir = os.path.dirname(os.path.abspath(__file__))
-config_path = os.path.join(base_dir, "../config/config.yaml.txt")
+# Get the parent directory of the 'scripts/' folder
+script_dir = os.path.dirname(os.path.abspath(__file__))
+repo_root = os.path.abspath(os.path.join(script_dir, ".."))
 
-with open(config_path, "r") as file:
-    config = yaml.safe_load(file)
+# Add the root directory to sys.path if not already present
+if repo_root not in sys.path:
+    sys.path.append(repo_root)
+
+# Import config_loader from the root directory
+from config_loader import get_config
+
+# Use the get_config() function
+config = get_config()
+print(config)  # For debugging, ensure the config is loaded correctly
+
 
 # Alpaca credentials
 API_KEY = config['alpaca']['api_key']

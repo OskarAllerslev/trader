@@ -32,13 +32,13 @@ if scripts_path not in sys.path:
     sys.path.append(scripts_path)
 
 from scripts.tailreaper import fit_t_distribution  # Ensure your tailreaper.py is in the 'scripts' folder
-
+from config_loader import get_config
 # -------------------------
 # Load config
 # -------------------------
-config_path = r"C:\Users\Oskar\OneDrive\strategytrader\trader\config\config.yaml.txt"
-with open(config_path, "r") as file:
-    config = yaml.safe_load(file)
+config = get_config()
+
+
 
 # Alpaca API credentials
 API_KEY = config['alpaca']['api_key']
