@@ -36,7 +36,7 @@ from scripts.tailreaper import fit_t_distribution  # Ensure your tailreaper.py i
 # -------------------------
 # Load config
 # -------------------------
-config_path = "config/config.yaml.txt"
+config_path = r"C:\Users\Oskar\OneDrive\strategytrader\trader\config\config.yaml.txt"
 with open(config_path, "r") as file:
     config = yaml.safe_load(file)
 
