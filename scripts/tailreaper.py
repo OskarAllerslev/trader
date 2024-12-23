@@ -33,7 +33,7 @@ repo_root = os.path.abspath(os.path.join(script_dir, ".."))
 # Add the root directory to sys.path if not already present
 if repo_root not in sys.path:
     sys.path.append(repo_root)
-
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 # Import config_loader from the root directory
 from config_loader import get_config
 

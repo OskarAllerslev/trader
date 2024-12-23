@@ -244,12 +244,14 @@ def fetch_historical_data(symbol, start_dt, end_dt):
         print("Missing 'Adj Close' in the data. Columns available:", data.columns)
         return data
 
+
     # Calculate log returns
     data['Log Return'] = np.log(data['Adj Close'] / data['Adj Close'].shift(1))
     data.dropna(inplace=True)
     print("Processed data with 'Log Return':")
     print(data.head())
     return data
+
 
 
 # =================================
