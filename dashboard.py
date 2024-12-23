@@ -126,7 +126,8 @@ def fetch_portfolio_history_from_api():
 
 async def fetch_last_p0_data_async():
     """Get the most recent p0 value from your 'msmdata' table."""
-    conn = await asyncpg.connect(DATABASE_URL)
+    conn = await asyncpg.connect(DATABASE_URL, statement_cache_size=0)
+
     row = await conn.fetchrow("SELECT timestamp, last_p0 FROM msmdata ORDER BY timestamp DESC LIMIT 1;")
     await conn.close()
     if row:
@@ -143,6 +144,7 @@ def fetch_last_p0_data():
 async def fetch_entry_threshold_async():
     """Get the most recent entry threshold from your 'msmdata' table."""
     conn = await asyncpg.connect(DATABASE_URL, statement_cache_size=0)
+
     try:
         row = await conn.fetchrow("""
             SELECT MAX(entry_threshold) AS max_entry_threshold
@@ -163,7 +165,8 @@ def fetch_entry_threshold():
 
 async def fetch_historical_p0_data_async():
     """Fetch daily last_p0 from your 'msmdata' table."""
-    conn = await asyncpg.connect(DATABASE_URL)
+    conn = await asyncpg.connect(DATABASE_URL, statement_cache_size=0)
+
     rows = await conn.fetch("""
         SELECT date(timestamp) AS day,
                CAST((array_agg(last_p0 ORDER BY timestamp DESC))[1] AS FLOAT) AS daily_last_p0
