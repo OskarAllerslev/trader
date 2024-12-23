@@ -36,11 +36,6 @@ config = get_config()
 API_KEY = config['alpaca']['api_key']
 API_SECRET = config['alpaca']['api_secret']
 
-
-# Alpaca API credentials
-API_KEY = config['alpaca']['api_key']
-API_SECRET = config['alpaca']['api_secret']
-
 # Database connection parameters
 DB_USER = 'postgres.dceaclimutffnytrqtfb'
 DB_PASSWORD = 'Porsevej7!'  # Replace with your actual password
@@ -53,8 +48,10 @@ trading_client = TradingClient(API_KEY, API_SECRET, paper=True)
 data_client = StockHistoricalDataClient(API_KEY, API_SECRET)
 
 # Global variables
-symbol_spy = "SPY"          # Symbol to fit the model on
-symbol_trade = "SPXL"       # Symbol to trade
+symbol_spy = "SPY"     # Symbol to fit the model on
+symbol_spxl = "SPXL"   # 3x leveraged symbol to trade (when regime is positive)
+symbol_shv = "SHV"     # iShares Short Treasury Bond ETF (when regime is not positive)
+
 log_returns_spy = []
 fitted_model = None
 positive_regime = 0
@@ -63,7 +60,9 @@ last_p0_timestamp = None
 ENTRY_THRESHOLD = config['strategies']['regime_switching']['entry_threshold']
 TRADE_PERCENTAGE = config['strategies']['regime_switching']['allocation_percentage']
 eastern = pytz.timezone('US/Eastern')
-current_position = None
+
+# Track which symbol we currently hold: can be symbol_spxl, symbol_shv, or None
+current_symbol = None
 
 def is_market_open():
     try:
@@ -79,6 +78,7 @@ async def insert_probability(timestamp, last_p0_val):
     # Construct connection string
     conn_str = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
     
+    conn = None
     try:
         # Connect using the connection string
         conn = await asyncpg.connect(conn_str)
@@ -92,8 +92,6 @@ async def insert_probability(timestamp, last_p0_val):
     finally:
         if conn:
             await conn.close()
-
-
 
 async def initialize_historical_data():
     global fitted_model, log_returns_spy, positive_regime, last_p0, last_p0_timestamp
@@ -191,12 +189,16 @@ async def initialize_historical_data():
         for date, prob in zip(last_five_dates, last_five_probs):
             logging.info(f"Smoothed probability {date}: {prob:.6f}")
 
-        last_p0 = smoothed_probs[-1]
-                
-        if data_combined.index[-1].date() != datetime.now(eastern).date():
-            last_p0_timestamp = data_combined.index[-1]
-        else: 
+        # Pick the last or second-to-last bar if the last one is "today" (partial)
+        today = datetime.now().date()
+        last_index_date = data_combined.index[-1].date()
+
+        if last_index_date == today:
+            last_p0 = smoothed_probs[-2]
             last_p0_timestamp = data_combined.index[-2]
+        else:
+            last_p0 = smoothed_probs[-1]
+            last_p0_timestamp = data_combined.index[-1]
             
         logging.info(f"Initial P0: {last_p0:.6f} at {last_p0_timestamp}")
 
@@ -211,33 +213,45 @@ def fit_markov_model(log_returns):
     logging.info("Model fitted.")
     return fitted_model
 
-async def check_and_cancel_conflicting_orders(direction):
+async def check_and_cancel_conflicting_orders(symbol, direction):
+    """
+    Cancel any open orders for the given symbol that conflict with the desired direction.
+    For example, if we want to BUY, cancel any open SELL orders and vice versa.
+    """
     try:
         open_orders_request = GetOrdersRequest(
             status=QueryOrderStatus.OPEN,
-            symbols=[symbol_trade],
+            symbols=[symbol],
             nested=False
         )
         open_orders = trading_client.get_orders(filter=open_orders_request)
         for order in open_orders:
+            # If the order's side doesn't match what we want, cancel it
             if order.side != direction.upper():
                 trading_client.cancel_order_by_id(order.id)
-                logging.info(f"Cancelled conflicting order: {order.id}")
+                logging.info(f"Cancelled conflicting order: {order.id} for {symbol}")
     except Exception as e:
-        logging.error(f"Error cancelling orders: {e}")
+        logging.error(f"Error cancelling orders for {symbol}: {e}")
 
-async def enter_position():
-    global current_position
+async def enter_position(symbol):
+    """
+    Buy as many shares of `symbol` as allowed by TRADE_PERCENTAGE of buying power.
+    Ensures market is open, cancels conflicting SELL orders first, then places a BUY.
+    """
+    global current_symbol
+
     if not is_market_open():
-        logging.info("Market closed, cannot enter.")
+        logging.info(f"Market closed, cannot enter position in {symbol}.")
         return
 
-    await check_and_cancel_conflicting_orders("BUY")
+    await check_and_cancel_conflicting_orders(symbol, "BUY")
+
     account = trading_client.get_account()
     current_buying_power = float(account.buying_power)
 
+    # Fetch the latest price
     request_params = StockBarsRequest(
-        symbol_or_symbols=symbol_trade,
+        symbol_or_symbols=symbol,
         timeframe=TimeFrame.Minute,
         limit=1,
         feed="iex"
@@ -245,72 +259,86 @@ async def enter_position():
     bars = data_client.get_stock_bars(request_params).df
 
     if bars.empty:
-        logging.error(f"No price for {symbol_trade}.")
+        logging.error(f"No price data for {symbol}.")
         return
 
     latest_price = bars['close'].iloc[-1]
     position_value = current_buying_power * TRADE_PERCENTAGE
     max_shares = int(position_value / latest_price)
     if max_shares <= 0:
-        logging.info("Not enough buying power.")
+        logging.info("Not enough buying power to buy any shares.")
         return
 
+    # Check if we already hold this symbol with sufficient size
     current_positions = trading_client.get_all_positions()
     for position in current_positions:
-        if position.symbol == symbol_trade:
+        if position.symbol == symbol:
             current_quantity = int(float(position.qty))
             if current_quantity * latest_price >= position_value * 0.95:
-                logging.info("Already fully invested.")
-                current_position = "long"
+                logging.info(f"Already sufficiently invested in {symbol}.")
+                current_symbol = symbol
                 return
 
     # Create a unique client_order_id
-    client_order_id = f"markovswitcher_entry_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-
+    client_order_id = f"markovswitcher_entry_{symbol}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
     order_data = MarketOrderRequest(
-        symbol=symbol_trade,
+        symbol=symbol,
         qty=max_shares,
         side=OrderSide.BUY,
         time_in_force=TimeInForce.DAY,
         client_order_id=client_order_id
     )
-    trading_client.submit_order(order_data=order_data)
-    logging.info(f"Bought {max_shares} shares of {symbol_trade}. Order ID: {client_order_id}.")
-    current_position = "long"
 
+    try:
+        trading_client.submit_order(order_data=order_data)
+        logging.info(f"Bought {max_shares} shares of {symbol}. Order ID: {client_order_id}.")
+        current_symbol = symbol
+    except Exception as e:
+        logging.error(f"Error placing buy order for {symbol}: {e}")
 
-async def exit_position():
-    global current_position
+async def exit_position(symbol):
+    """
+    Close (SELL) any existing shares of `symbol`.
+    Ensures market is open, cancels conflicting BUY orders first, then places a SELL.
+    """
+    global current_symbol
+
     if not is_market_open():
-        logging.info("Market closed, cannot exit.")
+        logging.info(f"Market closed, cannot exit position in {symbol}.")
         return
 
-    await check_and_cancel_conflicting_orders("SELL")
+    await check_and_cancel_conflicting_orders(symbol, "SELL")
     current_positions = trading_client.get_all_positions()
+
     for position in current_positions:
-        if position.symbol == symbol_trade:
+        if position.symbol == symbol:
             current_quantity = int(float(position.qty))
             if current_quantity > 0:
-                # Create a unique client_order_id
-                client_order_id = f"markovswitcher_exit_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-
+                client_order_id = f"markovswitcher_exit_{symbol}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
                 order_data = MarketOrderRequest(
-                    symbol=symbol_trade,
+                    symbol=symbol,
                     qty=current_quantity,
                     side=OrderSide.SELL,
                     time_in_force=TimeInForce.DAY,
                     client_order_id=client_order_id
                 )
-                trading_client.submit_order(order_data=order_data)
-                logging.info(f"Sold {current_quantity} shares of {symbol_trade}. Order ID: {client_order_id}.")
-                current_position = None
-            return
-    logging.info("No position to close.")
-    current_position = None
+                try:
+                    trading_client.submit_order(order_data=order_data)
+                    logging.info(f"Sold {current_quantity} shares of {symbol}. Order ID: {client_order_id}.")
+                except Exception as e:
+                    logging.error(f"Error placing sell order for {symbol}: {e}")
+            break
+    else:
+        logging.info(f"No position found to close in {symbol}.")
 
-from pandas.tseries.offsets import BDay
+    # If we just exited current_symbol, reset current_symbol to None
+    if current_symbol == symbol:
+        current_symbol = None
 
 async def refit_markov_model():
+    """
+    Periodically refit the Markov model (hourly, 5 min past each hour).
+    """
     global fitted_model, log_returns_spy, positive_regime, last_p0, last_p0_timestamp
 
     while True:
@@ -329,17 +357,12 @@ async def refit_markov_model():
                 start_date = '1990-01-01'
                 logging.info(f"Fetching data from {start_date} to {end_date}")
 
-                # Fetch data
                 data_yf = yf.download(symbol_spy, start=start_date, end=end_date, interval='1d')
                 data_yf.dropna(inplace=True)
 
-                if data_yf.index.tz is None:
-                    data_yf.index = data_yf.index.tz_localize('UTC')
-                else:
-                    data_yf.index = data_yf.index.tz_convert('UTC')
+                data_yf.index = data_yf.index.tz_localize('UTC') if data_yf.index.tz is None else data_yf.index.tz_convert('UTC')
 
-                # Process and combine data
-                data_combined = data_yf.copy()  # Assume no Alpaca data merging needed for simplicity
+                data_combined = data_yf.copy()
                 data_combined['Log Return'] = np.log(data_combined['Adj Close'] / data_combined['Adj Close'].shift(1))
                 data_combined = data_combined.iloc[1:]  # Drop the first row with NaN log return
                 data_combined.index = data_combined.index.tz_convert(eastern)
@@ -354,32 +377,41 @@ async def refit_markov_model():
                     logging.warning("No log returns available after processing.")
                     continue
 
-                # Fit the Markov model
                 fitted_model = fit_markov_model(log_returns_spy)
                 positive_regime = 0
                 smoothed_probs = fitted_model.smoothed_marginal_probabilities[:, positive_regime]
 
-                # Always use the last available probability (P0_{t-1}) and its timestamp
-                last_p0 = smoothed_probs[-1]
-                if data_combined.index[-1].date() != datetime.now(eastern).date():
-                    last_p0_timestamp = data_combined.index[-1]
-                else: 
-                    last_p0_timestamp = data_combined.index[-2]
+                # If the last day is "today" (partial), skip it for trading signals
+                today = datetime.now(eastern).date()
+                last_date_in_data = data_combined.index[-1].date()
+
+                if last_date_in_data == today:
+                    last_p0_val = smoothed_probs[-2]
+                    last_p0_ts = data_combined.index[-2]
+                else:
+                    last_p0_val = smoothed_probs[-1]
+                    last_p0_ts = data_combined.index[-1]
+
+                # Update global
+                last_p0_timestamp = last_p0_ts
+                last_p0 = last_p0_val
 
                 logging.info(f"Updated last_p0: {last_p0:.6f} at {last_p0_timestamp}")
-
         except Exception as e:
             logging.error(f"Error refitting model: {e}")
 
-
-
-
-
-# Lock
+# Lock for updating data/model
 update_lock = Lock()
 
 async def trading_logic():
-    global last_p0, last_p0_timestamp
+    """
+    Core trading logic that checks the last P0 vs. threshold, logs probabilities to DB,
+    and switches between SPXL (positive regime) and SHV (otherwise).
+    """
+    global last_p0, last_p0_timestamp, current_symbol
+
+    # Hard-coded override just for testing:
+    #last_p0 = 0.95  
 
     while True:
         await asyncio.sleep(5)
@@ -388,31 +420,58 @@ async def trading_logic():
                 current_last_p0 = last_p0
                 current_last_p0_timestamp = last_p0_timestamp
 
+            # First, detect what we *actually* hold at the broker:
+            current_positions = trading_client.get_all_positions()
+            # For a simple approach, if we hold SPXL (qty>0) and not SHV => current_symbol = SPXL
+            # If we hold SHV and not SPXL => current_symbol = SHV
+            # Otherwise => None
+            has_spxl = any((pos.symbol == symbol_spxl and float(pos.qty) > 0) for pos in current_positions)
+            has_shv  = any((pos.symbol == symbol_shv  and float(pos.qty) > 0) for pos in current_positions)
+            if has_spxl and not has_shv:
+                current_symbol = symbol_spxl
+            elif has_shv and not has_spxl:
+                current_symbol = symbol_shv
+            else:
+                # e.g. we hold neither or both—set to None
+                current_symbol = None
 
+            # Record probabilities to DB
             if current_last_p0 is not None and current_last_p0_timestamp is not None:
                 ts_utc = current_last_p0_timestamp.astimezone(timezone.utc)
                 await insert_probability(ts_utc, current_last_p0)
 
-            current_positions = trading_client.get_all_positions()
-            position_info = next((p for p in current_positions if p.symbol == symbol_trade), None)
-            if position_info:
-                position_qty = float(position_info.qty)
-                position_side = "long" if position_qty > 0 else "none"
-            else:
-                position_qty = 0
-                position_side = "none"
-
-            p0_time_str = current_last_p0_timestamp.strftime('%Y-%m-%d %H:%M:%S %Z') if current_last_p0_timestamp else 'N/A'
-            logging.info(f"Position: {position_side}, Qty: {position_qty}, P0: {current_last_p0:.6f} at {p0_time_str}, threshold: {ENTRY_THRESHOLD}")
-
+            # Determine desired symbol based on regime
             if current_last_p0 > ENTRY_THRESHOLD:
-                if position_side != "long":
-                    logging.info("Entering position.")
-                    await enter_position()
+                desired_symbol = symbol_spxl
             else:
-                if position_side == "long":
-                    logging.info("Exiting position.")
-                    await exit_position()
+                desired_symbol = symbol_shv
+
+            # Log current status
+            p0_time_str = (
+                current_last_p0_timestamp.strftime('%Y-%m-%d %H:%M:%S %Z') 
+                if current_last_p0_timestamp 
+                else 'N/A'
+            )
+            logging.info(
+                f"Current symbol: {current_symbol}, "
+                f"Desired symbol: {desired_symbol}, "
+                f"P0: {current_last_p0:.6f} at {p0_time_str}, threshold: {ENTRY_THRESHOLD}"
+            )
+
+            # If we're already holding the desired symbol, do nothing
+            if current_symbol == desired_symbol:
+                continue
+
+            # If we want to switch: 
+            # 1) Close old position (if any)
+            if current_symbol is not None and current_symbol != desired_symbol:
+                logging.info(f"Exiting position in {current_symbol} before switching to {desired_symbol}")
+                await exit_position(current_symbol)
+
+            # 2) Enter new position in desired symbol
+            if desired_symbol is not None:
+                logging.info(f"Entering position in {desired_symbol}")
+                await enter_position(desired_symbol)
 
         except Exception as e:
             logging.error(f"Error in trading logic: {e}")

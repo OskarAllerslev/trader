@@ -8,7 +8,7 @@ def get_config():
     
     # Resolve the base path depending on the environment
     if os.name == "nt":  # Windows (local development)
-        config_path = r"C:\Users\oskar\OneDrive\strategytrader\trader\config\config.yaml"
+        config_path = r"config\config.yaml"
     else:  # Default to the container path
         script_dir = os.path.dirname(os.path.abspath(__file__))
         config_path = os.path.normpath(os.path.join(script_dir, "config", "config.yaml"))
