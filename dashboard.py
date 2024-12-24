@@ -25,8 +25,6 @@ import os
 # -------------------------
 # Import local script
 # -------------------------
-# Rather than relying on __file__, we just assume 'scripts' is in the same directory.
-# Adjust if your folder structure is different.
 scripts_path = os.path.join(os.getcwd(), "scripts")
 if scripts_path not in sys.path:
     sys.path.append(scripts_path)
@@ -35,15 +33,18 @@ from scripts.tailreaper import fit_t_distribution  # Ensure your tailreaper.py i
 from config_loader import get_config
 config = get_config()
 
-
-
-
 # Alpaca API credentials
 API_KEY = config['alpaca']['api_key']
 API_SECRET = config['alpaca']['api_secret']
 
 # Database URL
-DATABASE_URL = "postgres://postgres.dceaclimutffnytrqtfb:Porsevej7!@aws-0-eu-central-1.pooler.supabase.com:6543/postgres"
+DATABASE_URL = (
+    "postgres://"
+    "postgres.dceaclimutffnytrqtfb:"
+    "Porsevej7!"
+    "@aws-0-eu-central-1.pooler.supabase.com:6543/"
+    "postgres"
+)
 
 # Initialize Alpaca clients
 trading_client = TradingClient(API_KEY, API_SECRET, paper=True)
@@ -51,6 +52,8 @@ data_client = StockHistoricalDataClient(API_KEY, API_SECRET)
 
 symbol_spy = "SPY"
 symbol_trade = "SPXL"
+symbol_spxl = "SPXL"
+symbol_shv  = "SHV"
 
 # --------------------------------------
 # Streamlit Page Configuration & Styling
@@ -93,7 +96,6 @@ def fetch_account_info():
     portfolio_value = float(account.portfolio_value)
     return balance, buying_power, equity, last_equity, portfolio_value
 
-
 def fetch_portfolio_history_from_api():
     """Get historical portfolio data from Alpaca to display equity curve."""
     url = "https://paper-api.alpaca.markets/v2/account/portfolio/history?intraday_reporting=market_hours&pnl_reset=per_day"
@@ -123,11 +125,9 @@ def fetch_portfolio_history_from_api():
     df.set_index("timestamp", inplace=True)
     return df
 
-
 async def fetch_last_p0_data_async():
     """Get the most recent p0 value from your 'msmdata' table."""
     conn = await asyncpg.connect(DATABASE_URL, statement_cache_size=0)
-
     row = await conn.fetchrow("SELECT timestamp, last_p0 FROM msmdata ORDER BY timestamp DESC LIMIT 1;")
     await conn.close()
     if row:
@@ -140,40 +140,38 @@ def fetch_last_p0_data():
     """Sync wrapper around the async function to fetch the latest p0."""
     return asyncio.run(fetch_last_p0_data_async())
 
-
 async def fetch_entry_threshold_async():
     """Get the most recent entry threshold from your 'msmdata' table."""
     conn = await asyncpg.connect(DATABASE_URL, statement_cache_size=0)
-
     try:
-        row = await conn.fetchrow("""
+        row = await conn.fetchrow(
+            """
             SELECT MAX(entry_threshold) AS max_entry_threshold
             FROM msmdata
             WHERE timestamp = (SELECT MAX(timestamp) FROM msmdata);
-        """)
+            """
+        )
         print("Query result:", row)  # Debugging output
         return float(row['max_entry_threshold']) if row else None
     finally:
         await conn.close()
 
-
-
 def fetch_entry_threshold():
     """Sync wrapper around the async function to fetch the entry threshold."""
     return asyncio.run(fetch_entry_threshold_async())
 
-
 async def fetch_historical_p0_data_async():
     """Fetch daily last_p0 from your 'msmdata' table."""
     conn = await asyncpg.connect(DATABASE_URL, statement_cache_size=0)
-
-    rows = await conn.fetch("""
+    rows = await conn.fetch(
+        """
         SELECT date(timestamp) AS day,
                CAST((array_agg(last_p0 ORDER BY timestamp DESC))[1] AS FLOAT) AS daily_last_p0
         FROM msmdata
         GROUP BY date(timestamp)
         ORDER BY day;
-    """)
+        """
+    )
     await conn.close()
 
     if rows:
@@ -189,25 +187,27 @@ def fetch_historical_p0_data():
     if df.empty:
         st.write("Fetched historical P0 data is empty in the cloud.")
     else:
-        st.write("Sample fetched historical P0 data:", df.head())
+        st.write("Sample fetched historical P0 data:", df.tail())
     return df
 
-
 def fetch_current_positions():
-    """Fetch the current position(s) for your symbol from Alpaca."""
+    """Fetch current positions for SPXL or SHV from Alpaca."""
     positions = trading_client.get_all_positions()
     data = []
+    
+    # Look for *both* SPXL and SHV
+    symbols_of_interest = [symbol_spxl, symbol_shv]
+    
     for pos in positions:
-        if pos.symbol == symbol_trade:
+        if pos.symbol in symbols_of_interest:
             qty = float(pos.qty)
             entry_price = float(pos.avg_entry_price)
-
             try:
-                latest_trade_req = StockLatestTradeRequest(symbol_or_symbols=[symbol_trade])
+                latest_trade_req = StockLatestTradeRequest(symbol_or_symbols=[pos.symbol])
                 latest_trade = data_client.get_stock_latest_trade(latest_trade_req)
-                current_price = latest_trade[symbol_trade].price
+                current_price = latest_trade[pos.symbol].price
             except Exception as e:
-                st.warning(f"Could not fetch current price for {symbol_trade}: {e}")
+                st.warning(f"Could not fetch current price for {pos.symbol}: {e}")
                 current_price = entry_price
 
             unrealized_pnl = (current_price - entry_price) * qty
@@ -229,7 +229,6 @@ def fetch_current_positions():
         )
     return position_df
 
-
 def fetch_historical_data(symbol, start_dt, end_dt):
     """Fetch daily historical price data from Yahoo Finance and compute log-returns."""
     print(f"Fetching data for {symbol} from {start_dt} to {end_dt}")
@@ -240,13 +239,11 @@ def fetch_historical_data(symbol, start_dt, end_dt):
         return data
 
     print("Fetched data sample:")
-    print(data.head())  # Print first few rows for debugging
+    print(data.tail())  # Print tail for debugging
 
-    # Ensure 'Adj Close' exists
     if 'Adj Close' not in data.columns:
         print("Missing 'Adj Close' in the data. Columns available:", data.columns)
         return data
-
 
     # Calculate log returns
     data['Log Return'] = np.log(data['Adj Close'] / data['Adj Close'].shift(1))
@@ -255,13 +252,10 @@ def fetch_historical_data(symbol, start_dt, end_dt):
     print(data.head())
     return data
 
-
-
 # =================================
 # Streamlit Layout & Tabs
 # =================================
 st.markdown("<h1 style='text-align: center;'>Trading Dashboard</h1>", unsafe_allow_html=True)
-
 tabs = st.tabs(["Account Overview", "Regime Switching trader", " Tail Reaper"])
 
 # ---------------------- ACCOUNT OVERVIEW ----------------------
@@ -303,7 +297,6 @@ with tabs[0]:
     else:
         st.write("No historical equity data available.")
 
-
 # ---------------------- REGIME SWITCHING TRADER ----------------------
 with tabs[1]:
     st.markdown("## Regime Switching trader")
@@ -342,6 +335,8 @@ with tabs[1]:
     position_df = fetch_current_positions()
     if position_df.empty:
         st.write("No current positions for this strategy.")
+        # NEW / UPDATED: default to SPY if no positions
+        symbol_to_plot = symbol_spy
     else:
         st.dataframe(
             position_df.style.format({
@@ -352,6 +347,8 @@ with tabs[1]:
             }),
             use_container_width=True
         )
+        # NEW / UPDATED: If you only hold one symbol, use that for the charts
+        symbol_to_plot = position_df["Symbol"].iloc[0]
 
     st.markdown("---")
 
@@ -364,13 +361,17 @@ with tabs[1]:
     if chosen_start > chosen_end:
         st.error("Start date must be before the end date.")
     else:
-        historical_data = fetch_historical_data(symbol_spy,
-                                               chosen_start.strftime("%Y-%m-%d"),
-                                               chosen_end.strftime("%Y-%m-%d"))
+        # NEW / UPDATED: Use symbol_to_plot instead of always symbol_spy
+        historical_data = fetch_historical_data(
+            symbol_to_plot,
+            chosen_start.strftime("%Y-%m-%d"),
+            chosen_end.strftime("%Y-%m-%d")
+        )
+
         if not historical_data.empty and 'Adj Close' in historical_data.columns:
             col1, col2 = st.columns(2)
             with col1:
-                st.markdown("**Historical Prices (Adj Close)**")
+                st.markdown(f"**Historical Prices (Adj Close) for {symbol_to_plot}**")
                 st.line_chart(historical_data['Adj Close'], use_container_width=True)
             with col2:
                 st.markdown("**Log Returns**")
@@ -380,7 +381,6 @@ with tabs[1]:
 
     if st.button("Refresh Data"):
         st.experimental_rerun()
-
 
 # ---------------------- TAIL REAPER STRATEGY ----------------------
 with tabs[2]:
@@ -432,8 +432,12 @@ with tabs[2]:
     pdf = t.pdf(x, *fitted_params)
 
     ax1.plot(pdf, x, color="red", label="Fitted t-Distribution")
-    ax1.fill_betweenx(x, 0, pdf, where=(x <= quantile_value), color="green", alpha=0.3,
-                      label=f"{quantile_threshold:.2%} Quantile")
+    ax1.fill_betweenx(
+        x, 0, pdf,
+        where=(x <= quantile_value),
+        color="green", alpha=0.3,
+        label=f"{quantile_threshold:.2%} Quantile"
+    )
     ax1.set_xlabel("Probability Density", color="red")
     ax1.set_ylabel("Log Returns")
     ax1.tick_params(axis="x", labelcolor="red")
